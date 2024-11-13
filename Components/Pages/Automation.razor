@@ -1,0 +1,201 @@
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Extending Boundaries with Semantic Kernel</PageTitle>
+
+<div class="row">
+        <div class="col-sm-12">
+            <div class="text-center">
+                <span class="logo-xl">
+                    <img src="/images/semantic-kernel-logo.png" alt="Microsoft Envision AI">
+                </span>
+            </div>
+            <br />
+            <div class="text-center">
+                <h2 class="main-title">Microsoft Envision AI</h2>
+                <h3 class="sub-title">Extending Boundaries with Semantic Kernel</h3>
+                <h4 class="notes-title">Enhances your lighting based on Bing search results.</h4>
+            </div>
+        </div><!-- end col -->
+    </div><!-- end row -->
+
+<br />
+
+<div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="tab-pane show active" id="basic-form-preview" role="tabpanel">
+                            <div class="mb-3">
+                                <h7 class="header-title mt-0 mb-3">System Prompt: </h7>
+                                <textarea class="form-control text-muted" style="font-size: 1.2rem;" id="systemPrompt" name="systemPrompt" rows=6 @bind="systemPrompt"></textarea>
+                            </div>                                
+                    </div> <!-- end preview-->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <br />
+
+<div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="tab-pane show active" id="basic-form-preview" role="tabpanel">
+                            <div class="mb-3">
+                                <h7 class="header-title mt-0 mb-3">Prompt: </h7>
+                                <textarea class="form-control text-muted" style="font-size: 1.2rem;" id="prompt" name="prompt" @bind="userPrompt"></textarea>
+                            </div>
+                            <button class="btn btn-primary" @onclick="SemanticKernelClient">Send</button>                                   
+                    </div>
+
+                    <div class="row">
+                        <p class="text-muted font-14" style="margin-top: 5px;">
+                            or select any of the following sample prompts:
+                        </p>
+                    </div>
+                    <div class="row"><div class="col-12">
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("change to the Venezuelan flag colors"))'>change to the Venezuelan flag colors</button>
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("change to the color of the year 2022"))'>change to the color of the year 2022</button>
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("change the light to the ISO color for the toxic fluids pipes"))'>change the light to the ISO color for the toxic fluids pipes</button>
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("change to the color of the winner of the champions league 2023"))'>change to the color of the winner of the champions league 2023</button>
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("change to the Thanos gauntlet gems colors"))'>change to the Thanos gauntlet gems colors</button>
+                        <button type="button" class="btn btn-info btn-right" style="font-size: 0.7rem; margin-top: 5px;" @onclick='(() => changePrompt("Its a rainy day. change the light accordingly"))'>Its a rainy day. change the light accordingly</button>
+                    </div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <br />
+
+    @if (showResponse)
+    {
+    <div class="row" id="showresult" >
+        <div class="col-lg-12">
+            <div class="card">
+                <div class="row g-0 align-items-center">
+                    <div class="col-md-12">
+                        <div class="card-body">
+                            <h7 class="header-title mt-0 mb-3">Results: </h7>
+                            <p class="text-muted font-16 mb-3" style="font-size: 1.2rem;" id="show-message-result">@serverResponse</p>
+                        </div> 
+                    </div>
+                </div>
+            </div> 
+        </div>
+    </div>
+    }
+    
+<br />
+
+@if (IsLoading)
+{
+    {
+        <div class="spinner-border"></div>
+        <span style="display: inline-block; vertical-align: super">@LoadingText</span>
+    }
+}
+
+
+@code {
+    @using Options;
+    @using Microsoft.SemanticKernel;
+    @using Microsoft.SemanticKernel.ChatCompletion;
+    @using Microsoft.SemanticKernel.Connectors.OpenAI;
+    @using Microsoft.Extensions.DependencyInjection;
+    @using Microsoft.Extensions.Hosting;
+    @using Microsoft.Extensions.Options;
+    @using Microsoft.Extensions.Logging;
+    @using Plugins;
+    @using System.Configuration;
+
+    public string systemPrompt = """"
+                You are a home assistant that can control lights.
+                Before changing the lights, you may need to check their current state.
+                Avoid telling the user numbers like the saturation, brightness, and hue; instead, use adjectives like 'bright' or 'dark'.
+                Change the light to the colors from the user prompt. If there is more than one color, rotate between them.
+                If there is a specific order of colors, please respect that order, even if there are repeated colors.
+                """";
+    public string userPrompt = string.Empty;
+    public string? serverResponse;
+
+    public bool showResponse = false;
+
+    [Parameter]
+    public bool IsLoading { get; set; }
+     [Parameter]
+    public string LoadingText { get; set; } = "Loading...";
+ 
+
+    private void changePrompt(string newPrompt)
+    {
+        userPrompt = newPrompt;
+    }
+
+    private async Task SemanticKernelClient()
+        {
+            IsLoading = true;
+            showResponse = false;
+            serverResponse = "";
+            
+            // Get the appsettings configuration
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+            builder.Services.Configure<HueBridgeOptions>(builder.Configuration.GetSection("HueBridgeOptions"));
+            builder.Services.Configure<BingSearchOptions>(builder.Configuration.GetSection("BingSearchOptions"));
+            builder.Services.Configure<OpenAIOptions>(builder.Configuration.GetSection("OpenAIOptions"));
+            var host = builder.Build();
+
+            // Create a kernel builder
+            IKernelBuilder kernelBuilder = Kernel.CreateBuilder();
+            kernelBuilder.Services.AddSingleton(host.Services.GetRequiredService<IOptions<HueBridgeOptions>>().Value);
+            kernelBuilder.Services.AddSingleton(host.Services.GetRequiredService<IOptions<BingSearchOptions>>().Value);
+            kernelBuilder.Services.AddLogging(c => c.AddDebug().SetMinimumLevel(LogLevel.Trace));
+
+            // Use a chat completion model from Azure OpenAI
+            kernelBuilder.AddAzureOpenAIChatCompletion(
+                deploymentName: host.Services.GetRequiredService<IOptions<OpenAIOptions>>().Value.ChatDeploymentName,
+                endpoint: host.Services.GetRequiredService<IOptions<OpenAIOptions>>().Value.Endpoint,
+                apiKey: host.Services.GetRequiredService<IOptions<OpenAIOptions>>().Value.ApiKey
+            );
+
+            // Add the plugins
+            kernelBuilder.Plugins.AddFromFunctions("DateTimeHelpers",
+                [KernelFunctionFactory.CreateFromMethod(() => $"{DateTime.UtcNow:r}", "Now", "Gets the current date and time")]
+            );
+            kernelBuilder.Plugins.AddFromType<Bing>();
+            kernelBuilder.Plugins.AddFromType<HueLights>();
+
+            // Build the kernel and retrieve the AI services
+            Kernel kernel = kernelBuilder.Build();
+            IChatCompletionService chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+
+            ChatHistory history = new();
+            history.AddSystemMessage(systemPrompt.ToString());
+
+            // Get the user's input
+            history.AddUserMessage(userPrompt.ToString());
+
+            // Generate the bot's response using the chat completion service
+            var response = chatCompletionService.GetStreamingChatMessageContentsAsync(
+                chatHistory: history,
+                executionSettings: new OpenAIPromptExecutionSettings()
+                {
+                    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions
+                },
+                kernel: kernel
+            ).ConfigureAwait(false);
+
+            // Stream the bot's response to the console
+            await foreach (var message in response)
+            {
+                serverResponse += message.ToString();
+            }
+            history.AddAssistantMessage(serverResponse); 
+
+            IsLoading = false;
+            showResponse = true;
+        }
+
+}
